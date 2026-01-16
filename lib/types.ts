@@ -21,9 +21,11 @@ export interface Product {
   is_limited: boolean
   is_featured: boolean
   is_active: boolean
+  product_type: "customizable" | "premade"
   created_at: string
   updated_at: string
   images?: ProductImage[]
+  customization_fields?: ProductCustomizationField[]
 }
 
 export interface ProductImage {
@@ -31,6 +33,18 @@ export interface ProductImage {
   product_id: string
   image_url: string
   is_primary: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface ProductCustomizationField {
+  id: string
+  product_id: string
+  field_name: string
+  field_type: "text" | "textarea" | "select" | "number" | "color"
+  field_label: string
+  field_options?: string[]
+  is_required: boolean
   sort_order: number
   created_at: string
 }
@@ -82,6 +96,7 @@ export interface CustomOrder {
   size_option: string | null
   material_option: string | null
   reference_images: string[]
+  reference_product?: string | null
   created_at: string
 }
 
