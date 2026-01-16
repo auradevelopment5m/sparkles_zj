@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import type { Product, ProductImage } from "@/lib/types"
@@ -34,10 +35,29 @@ export function ProductForm({ product }: ProductFormProps) {
     is_limited: product?.is_limited || false,
     is_featured: product?.is_featured || false,
     is_active: product?.is_active ?? true,
+    product_type: product?.product_type || "customizable",
   })
 
   const [images, setImages] = useState<{ url: string; isPrimary: boolean; id?: string }[]>(
     product?.images?.map((img) => ({ url: img.image_url, isPrimary: img.is_primary, id: img.id })) || [],
+  )
+
+  const [customizationFields, setCustomizationFields] = useState<{
+    id?: string
+    field_name: string
+    field_type: "text" | "textarea" | "select" | "number" | "color"
+    field_label: string
+    field_options: string[]
+    is_required: boolean
+  }[]>(
+    product?.customization_fields?.map((field) => ({
+      id: field.id,
+      field_name: field.field_name,
+      field_type: field.field_type,
+      field_label: field.field_label,
+      field_options: field.field_options || [],
+      is_required: field.is_required,
+    })) || [],
   )
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,6 +107,29 @@ export function ProductForm({ product }: ProductFormProps) {
     setImages((prev) => prev.map((img, i) => ({ ...img, isPrimary: i === index })))
   }
 
+  const addCustomizationField = () => {
+    setCustomizationFields((prev) => [
+      ...prev,
+      {
+        field_name: "",
+        field_type: "text",
+        field_label: "",
+        field_options: [],
+        is_required: false,
+      },
+    ])
+  }
+
+  const updateCustomizationField = (index: number, field: Partial<typeof customizationFields[0]>) => {
+    setCustomizationFields((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, ...field } : f))
+    )
+  }
+
+  const removeCustomizationField = (index: number) => {
+    setCustomizationFields((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -126,6 +169,25 @@ export function ProductForm({ product }: ProductFormProps) {
         await supabase.from("product_images").insert(imageInserts)
       }
 
+      // Add customization fields
+      if (customizationFields.length > 0 && productId) {
+        // Delete old customization fields
+        if (product) {
+          await supabase.from("product_customization_fields").delete().eq("product_id", product.id)
+        }
+
+        const fieldInserts = customizationFields.map((field, i) => ({
+          product_id: productId,
+          field_name: field.field_name,
+          field_type: field.field_type,
+          field_label: field.field_label,
+          field_options: field.field_options,
+          is_required: field.is_required,
+          sort_order: i,
+        }))
+        await supabase.from("product_customization_fields").insert(fieldInserts)
+      }
+
       toast.success(product ? "Product updated" : "Product created")
       router.push("/admin/products")
       router.refresh()
@@ -163,6 +225,18 @@ export function ProductForm({ product }: ProductFormProps) {
               placeholder="Describe the canvas..."
               rows={3}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="product_type">Product Type</Label>
+            <Select value={formData.product_type} onValueChange={(value) => setFormData({ ...formData, product_type: value as "customizable" | "premade" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select product type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="customizable">Customizable (with mockup)</SelectItem>
+                <SelectItem value="premade">Pre-made</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -253,6 +327,90 @@ export function ProductForm({ product }: ProductFormProps) {
           </div>
         </CardContent>
       </Card>
+
+      {formData.product_type === "customizable" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Customization Fields</CardTitle>
+            <CardDescription>Add fields for customers to customize this product</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {customizationFields.map((field, index) => (
+              <div key={index} className="border rounded-lg p-4 space-y-3">
+                <div className="flex justify-between items-start">
+                  <h4 className="font-medium">Field {index + 1}</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeCustomizationField(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Field Name</Label>
+                    <Input
+                      value={field.field_name}
+                      onChange={(e) => updateCustomizationField(index, { field_name: e.target.value })}
+                      placeholder="e.g., text_color"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Field Type</Label>
+                    <Select
+                      value={field.field_type}
+                      onValueChange={(value) => updateCustomizationField(index, { field_type: value as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="textarea">Textarea</SelectItem>
+                        <SelectItem value="select">Select</SelectItem>
+                        <SelectItem value="number">Number</SelectItem>
+                        <SelectItem value="color">Color</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Field Label</Label>
+                  <Input
+                    value={field.field_label}
+                    onChange={(e) => updateCustomizationField(index, { field_label: e.target.value })}
+                    placeholder="e.g., Text Color"
+                  />
+                </div>
+                {field.field_type === "select" && (
+                  <div className="space-y-2">
+                    <Label>Options (comma-separated)</Label>
+                    <Input
+                      value={field.field_options.join(", ")}
+                      onChange={(e) => updateCustomizationField(index, { field_options: e.target.value.split(",").map(s => s.trim()) })}
+                      placeholder="e.g., Red, Blue, Green"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id={`required-${index}`}
+                    checked={field.is_required}
+                    onChange={(e) => updateCustomizationField(index, { is_required: e.target.checked })}
+                  />
+                  <Label htmlFor={`required-${index}`}>Required</Label>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="outline" onClick={addCustomizationField}>
+              Add Customization Field
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
