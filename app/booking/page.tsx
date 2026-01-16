@@ -19,7 +19,7 @@ async function getProducts() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("products")
-    .select("*, images:product_images(*)")
+    .select("*, images:product_images(*), customization_fields:product_customization_fields(*)")
     .eq("is_active", true)
     .gt("stock", 0)
     .order("name")
@@ -50,7 +50,7 @@ export default async function BookingPage() {
             <div className="text-center max-w-2xl mx-auto">
               <h1 className="text-4xl md:text-5xl font-bold mb-4">Order Your Canvas</h1>
               <p className="text-lg text-muted-foreground">
-                Choose from our collection or create something completely unique
+                Choose from our customizable mockups or create something completely unique
               </p>
             </div>
           </div>
