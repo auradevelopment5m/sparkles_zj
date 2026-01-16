@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Upload, X, Loader2, Check } from "lucide-react"
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -27,15 +28,19 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
   const router = useRouter()
   const searchParams = useSearchParams()
   const preSelectedProduct = searchParams.get("product")
+  const tabParam = searchParams.get("tab")
 
-  const [orderType, setOrderType] = useState<"premade" | "custom">(preSelectedProduct ? "premade" : "custom")
+  const [orderType, setOrderType] = useState<"customizable" | "custom">("customizable")
   const [selectedProduct, setSelectedProduct] = useState<string>(preSelectedProduct || "")
   const [selectedSize, setSelectedSize] = useState<string>(sizeOptions[0]?.id || "")
+  const [customSize, setCustomSize] = useState<string>("")
   const [selectedMaterial, setSelectedMaterial] = useState<string>(materialOptions[0]?.id || "")
   const [customDescription, setCustomDescription] = useState("")
   const [referenceImages, setReferenceImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [customizationValues, setCustomizationValues] = useState<Record<string, string>>({})
+  const [referenceProduct, setReferenceProduct] = useState<string>("")
 
   const [customerInfo, setCustomerInfo] = useState({
     firstName: "",
@@ -45,11 +50,17 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
     notes: "",
   })
 
+  useEffect(() => {
+    if (tabParam === "custom") {
+      setOrderType("custom")
+    }
+  }, [tabParam])
+
   // Calculate price
   const getPrice = () => {
     let basePrice = 30 // Base price for custom orders
 
-    if (orderType === "premade" && selectedProduct) {
+    if (orderType === "customizable" && selectedProduct) {
       const product = products.find((p) => p.id === selectedProduct)
       basePrice = product?.price || 30
     }
@@ -61,7 +72,7 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
   }
 
   const getPoints = () => {
-    if (orderType === "premade" && selectedProduct) {
+    if (orderType === "customizable" && selectedProduct) {
       const product = products.find((p) => p.id === selectedProduct)
       return product?.points_value || 10
     }
@@ -112,7 +123,7 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
       return
     }
 
-    if (orderType === "premade" && !selectedProduct) {
+    if (orderType === "customizable" && !selectedProduct) {
       toast.error("Please select a product")
       return
     }
@@ -120,6 +131,19 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
     if (orderType === "custom" && !customDescription) {
       toast.error("Please describe your custom canvas")
       return
+    }
+
+    // Validate customization fields for customizable products
+    if (orderType === "customizable" && selectedProduct) {
+      const product = products.find((p) => p.id === selectedProduct)
+      if (product?.customization_fields) {
+        for (const field of product.customization_fields) {
+          if (field.is_required && !customizationValues[field.field_name]) {
+            toast.error(`Please fill in the ${field.field_label} field`)
+            return
+          }
+        }
+      }
     }
 
     setIsSubmitting(true)
@@ -149,17 +173,30 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
 
       if (orderError) throw orderError
 
-      if (orderType === "premade" && selectedProduct) {
-        // Create order item for premade product
-        const { error: itemError } = await supabase.from("order_items").insert({
+      if (orderType === "customizable" && selectedProduct) {
+        // Create order item for premade or customizable product
+        const { data: orderItem, error: itemError } = await supabase.from("order_items").insert({
           order_id: order.id,
           product_id: selectedProduct,
           price: getPrice(),
-          size_option: sizeOptions.find((s) => s.id === selectedSize)?.name,
+          size_option: selectedSize === 'custom' ? customSize : sizeOptions.find((s) => s.id === selectedSize)?.name,
           material_option: materialOptions.find((m) => m.id === selectedMaterial)?.name,
-        })
+        }).select().single()
 
         if (itemError) throw itemError
+
+        // Add customization values for customizable products
+        if (orderType === "customizable") {
+          const product = products.find((p) => p.id === selectedProduct)
+          if (product?.customization_fields) {
+            const customizationInserts = product.customization_fields.map((field) => ({
+              order_item_id: orderItem.id,
+              field_id: field.id,
+              field_value: customizationValues[field.field_name] || "",
+            }))
+            await supabase.from("product_customization_values").insert(customizationInserts)
+          }
+        }
 
         // Add to collection if limited and user is logged in
         const product = products.find((p) => p.id === selectedProduct)
@@ -179,9 +216,10 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
         const { error: customError } = await supabase.from("custom_orders").insert({
           order_id: order.id,
           description: customDescription,
-          size_option: sizeOptions.find((s) => s.id === selectedSize)?.name,
+          size_option: selectedSize === 'custom' ? customSize : sizeOptions.find((s) => s.id === selectedSize)?.name,
           material_option: materialOptions.find((m) => m.id === selectedMaterial)?.name,
           reference_images: referenceImages,
+          reference_product: referenceProduct || null,
         })
 
         if (customError) throw customError
@@ -199,18 +237,18 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
 
   return (
     <form onSubmit={handleSubmit}>
-      <Tabs value={orderType} onValueChange={(v) => setOrderType(v as "premade" | "custom")}>
+      <Tabs value={orderType} onValueChange={(v) => setOrderType(v as "customizable" | "custom")}>
         <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="premade">Pre-made Canvas</TabsTrigger>
-          <TabsTrigger value="custom">Custom Order</TabsTrigger>
+          <TabsTrigger value="customizable" className="text-sm sm:text-base">Mockups</TabsTrigger>
+          <TabsTrigger value="custom" className="text-sm sm:text-base">Custom Order</TabsTrigger>
         </TabsList>
 
-        {/* Pre-made Selection */}
-        <TabsContent value="premade" className="space-y-6">
+        {/* Customizable Selection */}
+        <TabsContent value="customizable" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Select Canvas</CardTitle>
-              <CardDescription>Choose from our available collection</CardDescription>
+              <CardTitle>Select Mockup</CardTitle>
+              <CardDescription>Choose a design and customize it to your liking</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -255,11 +293,82 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
               </div>
               {products.length === 0 && (
                 <p className="text-center text-muted-foreground py-8">
-                  No products available. Try a custom order instead!
+                  No mockups available. Try a custom order instead!
                 </p>
               )}
             </CardContent>
           </Card>
+
+          {/* Customization Fields */}
+          {selectedProduct && products.find(p => p.id === selectedProduct)?.customization_fields && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Customize Your Mockup</CardTitle>
+                <CardDescription>Fill in the details for your custom design</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {products.find(p => p.id === selectedProduct)?.customization_fields?.map((field) => (
+                  <div key={field.id} className="space-y-2">
+                    <Label htmlFor={field.field_name}>
+                      {field.field_label} {field.is_required && "*"}
+                    </Label>
+                    {field.field_type === "text" && (
+                      <Input
+                        id={field.field_name}
+                        value={customizationValues[field.field_name] || ""}
+                        onChange={(e) => setCustomizationValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                        required={field.is_required}
+                      />
+                    )}
+                    {field.field_type === "textarea" && (
+                      <Textarea
+                        id={field.field_name}
+                        value={customizationValues[field.field_name] || ""}
+                        onChange={(e) => setCustomizationValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                        required={field.is_required}
+                        rows={3}
+                      />
+                    )}
+                    {field.field_type === "select" && (
+                      <Select
+                        value={customizationValues[field.field_name] || ""}
+                        onValueChange={(value) => setCustomizationValues(prev => ({ ...prev, [field.field_name]: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={`Select ${field.field_label.toLowerCase()}`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.field_options?.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {field.field_type === "number" && (
+                      <Input
+                        id={field.field_name}
+                        type="number"
+                        value={customizationValues[field.field_name] || ""}
+                        onChange={(e) => setCustomizationValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                        required={field.is_required}
+                      />
+                    )}
+                    {field.field_type === "color" && (
+                      <Input
+                        id={field.field_name}
+                        type="color"
+                        value={customizationValues[field.field_name] || "#000000"}
+                        onChange={(e) => setCustomizationValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                        required={field.is_required}
+                      />
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Custom Order */}
@@ -279,6 +388,47 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
                   value={customDescription}
                   onChange={(e) => setCustomDescription(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Reference Product (Optional)</Label>
+                <Select
+                  value={referenceProduct}
+                  onValueChange={setReferenceProduct}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a product as reference" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((product) => {
+                      const img = product.images?.find((i) => i.is_primary) || product.images?.[0]
+                      return (
+                        <SelectItem key={product.id} value={product.id}>
+                          <span className="flex items-center gap-2">
+                            <span className="relative h-6 w-6 rounded-md overflow-hidden bg-muted">
+                              <Image src={img?.image_url || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
+                            </span>
+                            <span>{product.name}</span>
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+                {referenceProduct && (
+                  (() => {
+                    const product = products.find(p => p.id === referenceProduct)
+                    const img = product?.images?.find((i) => i.is_primary) || product?.images?.[0]
+                    return product ? (
+                      <div className="mt-2 flex items-center gap-3">
+                        <span className="relative h-16 w-16 rounded-md overflow-hidden bg-muted">
+                          <Image src={img?.image_url || "/placeholder.svg"} alt={product.name} fill className="object-cover" />
+                        </span>
+                        <span className="font-medium">{product.name}</span>
+                      </div>
+                    ) : null
+                  })()
+                )}
               </div>
 
               <div className="space-y-2">
@@ -331,7 +481,7 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
           {/* Size */}
           <div className="space-y-3">
             <Label>Canvas Size</Label>
-            <RadioGroup value={selectedSize} onValueChange={setSelectedSize} className="grid sm:grid-cols-2 gap-3">
+            <RadioGroup value={selectedSize} onValueChange={val => { setSelectedSize(val); if (val !== 'custom') setCustomSize(''); }} className="grid sm:grid-cols-2 gap-3">
               {sizeOptions.map((option) => (
                 <div key={option.id}>
                   <RadioGroupItem value={option.id} id={option.id} className="peer sr-only" />
@@ -350,7 +500,26 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
                   </Label>
                 </div>
               ))}
+              {/* Custom size option */}
+              <div key="custom-size">
+                <RadioGroupItem value="custom" id="custom-size" className="peer sr-only" />
+                <Label
+                  htmlFor="custom-size"
+                  className="flex items-center justify-between rounded-lg border-2 p-4 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5"
+                >
+                  <span>Custom Size</span>
+                </Label>
+              </div>
             </RadioGroup>
+            {selectedSize === 'custom' && (
+              <Input
+                type="text"
+                placeholder="Enter custom size (e.g. 24x36 inches)"
+                value={customSize}
+                onChange={e => setCustomSize(e.target.value)}
+                className="mt-2"
+              />
+            )}
           </div>
 
           {/* Material */}
@@ -455,13 +624,13 @@ export function BookingForm({ products, sizeOptions, materialOptions }: BookingF
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">
-                {orderType === "premade" && selectedProduct
+                {orderType === "customizable" && selectedProduct
                   ? products.find((p) => p.id === selectedProduct)?.name
                   : "Custom Canvas"}
               </span>
               <span>
                 $
-                {orderType === "premade" && selectedProduct
+                {orderType === "customizable" && selectedProduct
                   ? products.find((p) => p.id === selectedProduct)?.price
                   : 30}
               </span>
