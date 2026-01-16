@@ -136,21 +136,7 @@ export default async function HomePage() {
           <PaintSplatter variant="section" />
           <div className="container mx-auto px-4 lg:px-8 relative z-10">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
-              <div className="relative">
-                <div className="relative aspect-square max-w-md mx-auto rounded-2xl overflow-hidden shadow-2xl">
-                  <Image
-                    src="/portfolioimage.jpeg"
-                    alt={settings?.founder_name || "Zahraa Jaffal"}
-                    fill
-                    className="object-fill"
-                    priority
-                  />
-                </div>
-                <div className="absolute -bottom-6 -right-6 bg-primary text-primary-foreground rounded-2xl p-6 shadow-xl">
-                  <p className="text-3xl font-bold">2+</p>
-                  <p className="text-sm">Years of Art</p>
-                </div>
-              </div>
+                {/* Founder image and years of art removed as requested */}
 
               <div className="space-y-6">
                 <h2 className="text-3xl md:text-4xl font-bold text-balance">Meet the Artist Behind Sparkles</h2>
