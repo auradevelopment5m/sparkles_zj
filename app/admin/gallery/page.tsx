@@ -173,12 +173,12 @@ export default function AdminGalleryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 p-6">
               {items.map((item) => (
                 <Card key={item.id} className="flex flex-col items-center justify-between w-64 h-64 p-4 shadow-md">
-                  <div className="relative w-full h-40 rounded-lg overflow-hidden bg-muted mb-2">
+                  <div className="relative w-full h-40 aspect-square rounded-lg overflow-hidden bg-muted mb-2">
                     <Image
                       src={item.image_url || "/placeholder.svg"}
                       alt={item.title || "Gallery"}
                       fill
-                      className="object-cover"
+                      className="object-contain"
                       sizes="256px"
                     />
                   </div>
