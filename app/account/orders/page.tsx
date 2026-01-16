@@ -18,7 +18,15 @@ async function getOrders() {
 
   const { data } = await supabase
     .from("orders")
-    .select("*, items:order_items(*, product:products(*)), custom_order:custom_orders(*)")
+    .select(`
+      *,
+      items:order_items(
+        *,
+        product:products(name, customization_fields:product_customization_fields(*)),
+        customization_values:product_customization_values(*, field:product_customization_fields(*))
+      ),
+      custom_order:custom_orders(*)
+    `)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
@@ -83,6 +91,11 @@ export default async function OrdersPage() {
                           {order.is_custom && (
                             <Badge variant="outline" className="text-xs">
                               Custom
+                            </Badge>
+                          )}
+                          {order.items?.some(item => item.product?.customization_fields?.length > 0) && !order.is_custom && (
+                            <Badge variant="outline" className="text-xs">
+                              Mockup
                             </Badge>
                           )}
                         </div>
