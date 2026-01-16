@@ -25,6 +25,12 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
         <ShoppingBag className="mr-2 h-5 w-5" />
         {product.stock === 0 ? "Sold Out" : "Order Now"}
       </Button>
+      {product.stock === 0 && (
+        <div className="mt-2 flex flex-col items-center">
+          <p className="text-sm text-center text-muted-foreground mb-2">Want something like this? Place a custom order.</p>
+          <Button size="sm" variant="outline" onClick={() => router.push('/booking?tab=custom')}>Place Custom Order</Button>
+        </div>
+      )}
       <p className="text-xs text-center text-muted-foreground">Cash on Delivery • Free local delivery</p>
     </div>
   )
