@@ -7,7 +7,15 @@ async function getOrders() {
   const supabase = await createClient()
   const { data } = await supabase
     .from("orders")
-    .select("*, items:order_items(product:products(name)), custom_order:custom_orders(*)")
+    .select(`
+      *,
+      items:order_items(
+        *,
+        product:products(name, customization_fields:product_customization_fields(*)),
+        customization_values:product_customization_values(*, field:product_customization_fields(*))
+      ),
+      custom_order:custom_orders(*)
+    `)
     .order("created_at", { ascending: false })
   return data || []
 }
@@ -45,9 +53,12 @@ export default async function AdminOrdersPage() {
                         {order.first_name} {order.last_name}
                       </p>
                       {order.is_custom && <Badge variant="outline">Custom</Badge>}
+                      {order.items?.some(item => item.product?.customization_fields?.length > 0) && !order.is_custom && <Badge variant="outline">Mockup</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {order.is_custom ? "Custom Order" : order.items?.[0]?.product?.name || "Order"}
+                      {order.is_custom
+                        ? "Custom Order"
+                        : order.items?.[0]?.product?.name || "Order"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(order.created_at).toLocaleDateString()} • {order.phone}
