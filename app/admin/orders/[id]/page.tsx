@@ -14,7 +14,13 @@ async function getOrder(id: string) {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "*, items:order_items(*, product:products(*, images:product_images(*))), custom_order:custom_orders(*)",
+      `*, 
+       items:order_items(
+         *,
+         product:products(*, images:product_images(*), customization_fields:product_customization_fields(*)),
+         customization_values:product_customization_values(*, field:product_customization_fields(*))
+       ),
+       custom_order:custom_orders(*)`,
     )
     .eq("id", id)
     .maybeSingle()
@@ -31,6 +37,24 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
 
   if (!order) {
     notFound()
+  }
+
+  const customOrder = Array.isArray(order.custom_order) ? order.custom_order[0] : order.custom_order
+
+  let refProduct: any = null
+  let refProductImg: any = null
+  if (customOrder?.reference_product) {
+    refProduct = order.items?.find((item: any) => item.product?.id === customOrder.reference_product)?.product
+    if (!refProduct) {
+      const supabase = await createClient()
+      const { data } = await supabase
+        .from("products")
+        .select("*, images:product_images(*)")
+        .eq("id", customOrder.reference_product)
+        .single()
+      refProduct = data
+    }
+    refProductImg = refProduct?.images?.find((i: any) => i.is_primary) || refProduct?.images?.[0]
   }
 
   return (
@@ -63,24 +87,32 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
               <CardTitle>Order Items</CardTitle>
             </CardHeader>
             <CardContent>
-              {order.is_custom && order.custom_order ? (
+              {order.is_custom && customOrder ? (
                 <div className="space-y-4">
                   <Badge variant="outline">Custom Order</Badge>
                   <p className="font-medium">Description:</p>
-                  <p className="text-muted-foreground">{order.custom_order.description}</p>
+                  <p className="text-muted-foreground">{customOrder.description}</p>
+                  {customOrder.reference_product && refProduct && (
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="relative h-16 w-16 rounded-md overflow-hidden bg-muted">
+                        <Image src={refProductImg?.image_url || "/placeholder.svg"} alt={refProduct.name} fill className="object-cover" />
+                      </span>
+                      <span className="font-medium">Reference: {refProduct.name}</span>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
-                    {order.custom_order.size_option && (
-                      <Badge variant="secondary">{order.custom_order.size_option}</Badge>
+                    {customOrder.size_option && (
+                      <Badge variant="secondary">{customOrder.size_option}</Badge>
                     )}
-                    {order.custom_order.material_option && (
-                      <Badge variant="secondary">{order.custom_order.material_option}</Badge>
+                    {customOrder.material_option && (
+                      <Badge variant="secondary">{customOrder.material_option}</Badge>
                     )}
                   </div>
-                  {order.custom_order.reference_images?.length > 0 && (
+                  {customOrder.reference_images?.length > 0 && (
                     <div>
                       <p className="font-medium mb-2">Reference Images:</p>
                       <div className="grid grid-cols-3 gap-2">
-                        {order.custom_order.reference_images.map((url: string, i: number) => (
+                        {customOrder.reference_images.map((url: string, i: number) => (
                           <a
                             key={i}
                             href={url}
@@ -88,12 +120,7 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                             rel="noopener noreferrer"
                             className="relative aspect-square rounded-lg overflow-hidden"
                           >
-                            <Image
-                              src={url || "/placeholder.svg"}
-                              alt={`Reference ${i + 1}`}
-                              fill
-                              className="object-cover"
-                            />
+                            <Image src={url || "/placeholder.svg"} alt={`Reference ${i + 1}`} fill className="object-cover" />
                           </a>
                         ))}
                       </div>
@@ -105,40 +132,56 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                   {order.items?.map(
                     (item: {
                       id: string
-                      product: { name: string; images: { is_primary: boolean; image_url: string }[] }
+                      product: { name: string; images: { is_primary: boolean; image_url: string }[]; customization_fields?: any[] }
                       size_option: string
                       material_option: string
                       price: number
+                      customization_values?: any[]
                     }) => {
                       const img =
                         item.product?.images?.find((i: { is_primary: boolean }) => i.is_primary) ||
                         item.product?.images?.[0]
                       return (
-                        <div key={item.id} className="flex gap-4">
-                          <div className="relative h-20 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                            <Image
-                              src={img?.image_url || `/placeholder.svg?height=80&width=80`}
-                              alt={item.product?.name || "Product"}
-                              fill
-                              className="object-cover"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">{item.product?.name}</p>
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              {item.size_option && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {item.size_option}
-                                </Badge>
-                              )}
-                              {item.material_option && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {item.material_option}
-                                </Badge>
-                              )}
+                        <div key={item.id} className="space-y-3">
+                          <div className="flex gap-4">
+                            <div className="relative h-20 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                              <Image
+                                src={img?.image_url || `/placeholder.svg?height=80&width=80`}
+                                alt={item.product?.name || "Product"}
+                                fill
+                                className="object-cover"
+                              />
                             </div>
-                            <p className="text-primary font-semibold mt-2">${item.price}</p>
+                            <div className="flex-1">
+                              <p className="font-medium">{item.product?.name}</p>
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {item.size_option && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {item.size_option}
+                                  </Badge>
+                                )}
+                                {item.material_option && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {item.material_option}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-primary font-semibold mt-2">${item.price}</p>
+                            </div>
                           </div>
+                          {item.customization_values && item.customization_values.length > 0 && (
+                            <div className="ml-24 space-y-1">
+                              <p className="text-sm font-medium text-muted-foreground">Customizations:</p>
+                              <div className="space-y-1">
+                                {item.customization_values.map((value: any) => (
+                                  <div key={value.id} className="text-sm">
+                                    <span className="font-medium">{value.field?.field_label}:</span>{" "}
+                                    <span>{value.field_value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )
                     },
